@@ -284,6 +284,12 @@ static const struct pci_quirk pci_quirks[] = {
 	{ 0x12378086, PCI_QUIRK_ENABLE_MSI_VM,	0,	0 },
 
 	/*
+	 * GCE VMs generally present a gve(4) device at 0:0:0, which
+	 * we can use as a trigger to enable MSI.
+	 */
+	{ 0x00421ae0, PCI_QUIRK_ENABLE_MSI_VM,	0,	0 },
+
+	/*
 	 * HPET MMIO base address may appear in Bar1 for AMD SB600 SMBus
 	 * controller depending on SoftPciRst register (PM_IO 0x55 [7]).
 	 * It prevents us from attaching hpet(4) when the bit is unset.
