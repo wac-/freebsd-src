@@ -61,6 +61,7 @@ static const struct {
 	{ "VirtualBox",			VM_GUEST_VBOX },
 	{ "Parallels Virtual Platform",	VM_GUEST_PARALLELS },
 	{ "KVM",			VM_GUEST_KVM },
+	{ "Google Compute Engine",	VM_GUEST_KVM },
 };
 
 void
@@ -101,12 +102,30 @@ identify_hypervisor_smbios(void)
 	}
 	p = kern_getenv("smbios.system.product");
 	if (p != NULL) {
-		for (i = 0; i < nitems(vm_pnames); i++)
+		for (i = 0; i < nitems(vm_pnames); i++) {
 			if (strcmp(p, vm_pnames[i].vm_pname) == 0) {
 				vm_guest = vm_pnames[i].vm_guest;
+				/*
+				 * Google Compute Engine's bare metal instances
+				 * have a serial number that starts with
+				 * "GoogleCloud-BM-".
+				 */
+				if (strcmp(p, "Google Compute Engine") == 0) {
+					char *s;
+
+					s = kern_getenv("smbios.system.serial");
+					if (s != NULL) {
+						if (strncmp(s,
+							"GoogleCloud-BM-",
+							15) == 0)
+							vm_guest = VM_GUEST_NO;
+						freeenv(s);
+					}
+				}
 				freeenv(p);
 				return;
 			}
+		}
 		freeenv(p);
 	}
 }
