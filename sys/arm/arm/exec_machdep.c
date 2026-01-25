@@ -222,8 +222,11 @@ set_mcontext(struct thread *td, mcontext_t *mcp)
 	 */
 	spsr = gr[_REG_CPSR];
 	if ((spsr & PSR_MODE) != PSR_USR32_MODE ||
-	    (spsr & (PSR_I | PSR_F)) != 0)
+	    (spsr & (PSR_I | PSR_F)) != 0) {
+		uprintf("pid %d (%s): sigreturn spsr = 0x%x\n",
+		    td->td_proc->p_pid, td->td_name, spsr);
 		return (EINVAL);
+	}
 
 #ifdef WITNESS
 	if (mcp->mc_vfp_size != 0 && mcp->mc_vfp_size != sizeof(mc_vfp)) {
@@ -383,8 +386,10 @@ sys_sigreturn(struct thread *td, struct sigreturn_args *uap)
 		return (EFAULT);
 	/* Restore register context. */
 	error = set_mcontext(td, &uc.uc_mcontext);
-	if (error != 0)
+	if (error != 0) {
+		sigexit(td, SIGILL);
 		return (error);
+	}
 
 	/* Restore signal mask. */
 	kern_sigprocmask(td, SIG_SETMASK, &uc.uc_sigmask, NULL, 0);

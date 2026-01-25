@@ -346,8 +346,10 @@ sys_sigreturn(struct thread *td, struct sigreturn_args *uap)
 	}
 
 	error = set_mcontext(td, &uc.uc_mcontext);
-	if (error != 0)
+	if (error != 0) {
+		sigexit(td, SIGILL);
 		return (error);
+	}
 
 	kern_sigprocmask(td, SIG_SETMASK, &uc.uc_sigmask, NULL, 0);
 
@@ -481,8 +483,11 @@ set_mcontext(struct thread *td, mcontext_t *mcp)
 	pcb = td->td_pcb;
 	tf = td->td_frame;
 
-	if (mcp->mc_vers != _MC_VERSION || mcp->mc_len != sizeof(*mcp))
+	if (mcp->mc_vers != _MC_VERSION || mcp->mc_len != sizeof(*mcp)) {
+		uprintf("pid %d (%s): sigreturn invalid version/len %d/%zd\n",
+		    td->td_proc->p_pid, td->td_name, mcp->mc_vers, mcp->mc_len);
 		return (EINVAL);
+	}
 
 	/*
 	 * Don't let the user change privileged MSR bits.
@@ -498,6 +503,8 @@ set_mcontext(struct thread *td, mcontext_t *mcp)
 	 * support for a new conditional facility!
 	 */
 	if ((mcp->mc_srr1 & psl_userstatic) != (tf->srr1 & psl_userstatic)) {
+		uprintf("pid %d (%s): sigreturn srr1 = 0x%lx\n",
+		    td->td_proc->p_pid, td->td_name, mcp->mc_srr1);
 		return (EINVAL);
 	}
 

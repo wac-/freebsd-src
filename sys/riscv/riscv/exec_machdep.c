@@ -244,8 +244,11 @@ set_mcontext(struct thread *td, mcontext_t *mcp)
 	 */
 	if (((mcp->mc_gpregs.gp_sstatus ^ tf->tf_sstatus) &
 	    ~(SSTATUS_SD | SSTATUS_XS_MASK | SSTATUS_FS_MASK | SSTATUS_UPIE |
-	    SSTATUS_UIE)) != 0)
+	    SSTATUS_UIE)) != 0) {
+		uprintf("pid %d (%s): sigreturn sstatus = 0x%lx\n",
+		    td->td_proc->p_pid, td->td_name, mcp->mc_gpregs.gp_sstatus);
 		return (EINVAL);
+	}
 
 	memcpy(tf->tf_t, mcp->mc_gpregs.gp_t, sizeof(tf->tf_t));
 	memcpy(tf->tf_s, mcp->mc_gpregs.gp_s, sizeof(tf->tf_s));
@@ -324,8 +327,10 @@ sys_sigreturn(struct thread *td, struct sigreturn_args *uap)
 		return (EFAULT);
 
 	error = set_mcontext(td, &uc.uc_mcontext);
-	if (error != 0)
+	if (error != 0) {
+		sigexit(td, SIGILL);
 		return (error);
+	}
 
 	/* Restore signal mask. */
 	kern_sigprocmask(td, SIG_SETMASK, &uc.uc_sigmask, NULL, 0);
