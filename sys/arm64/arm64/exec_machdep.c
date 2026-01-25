@@ -530,27 +530,6 @@ set_mcontext(struct thread *td, mcontext_t *mcp)
 		return (EINVAL);
 	}
 
-	memcpy(tf->tf_x, mcp->mc_gpregs.gp_x, sizeof(tf->tf_x));
-
-	tf->tf_sp = mcp->mc_gpregs.gp_sp;
-	tf->tf_lr = mcp->mc_gpregs.gp_lr;
-	tf->tf_elr = mcp->mc_gpregs.gp_elr;
-#ifdef COMPAT_FREEBSD13
-	if (td->td_proc->p_osrel < P_OSREL_ARM64_SPSR) {
-		/* Keep the upper 32 bits of spsr on older releases */
-		tf->tf_spsr &= ~PSR_13_MASK;
-		tf->tf_spsr |= spsr;
-	} else
-#endif
-		tf->tf_spsr = spsr;
-	if ((tf->tf_spsr & PSR_SS) != 0) {
-		td->td_pcb->pcb_flags |= PCB_SINGLE_STEP;
-
-		WRITE_SPECIALREG(mdscr_el1,
-		    READ_SPECIALREG(mdscr_el1) | MDSCR_SS);
-		isb();
-	}
-
 	set_fpcontext(td, mcp);
 
 	/* Read any register contexts we find */
@@ -635,6 +614,27 @@ set_mcontext(struct thread *td, mcontext_t *mcp)
 #undef CTX_TYPE_FLAG_SVE
 	}
 
+	memcpy(tf->tf_x, mcp->mc_gpregs.gp_x, sizeof(tf->tf_x));
+
+	tf->tf_sp = mcp->mc_gpregs.gp_sp;
+	tf->tf_lr = mcp->mc_gpregs.gp_lr;
+	tf->tf_elr = mcp->mc_gpregs.gp_elr;
+#ifdef COMPAT_FREEBSD13
+	if (td->td_proc->p_osrel < P_OSREL_ARM64_SPSR) {
+		/* Keep the upper 32 bits of spsr on older releases */
+		tf->tf_spsr &= ~PSR_13_MASK;
+		tf->tf_spsr |= spsr;
+	} else
+#endif
+		tf->tf_spsr = spsr;
+	if ((tf->tf_spsr & PSR_SS) != 0) {
+		td->td_pcb->pcb_flags |= PCB_SINGLE_STEP;
+
+		WRITE_SPECIALREG(mdscr_el1,
+		    READ_SPECIALREG(mdscr_el1) | MDSCR_SS);
+		isb();
+	}
+
 	return (0);
 #undef PSR_13_MASK
 }
@@ -710,8 +710,10 @@ sys_sigreturn(struct thread *td, struct sigreturn_args *uap)
 	/* Stop an interrupt from causing the sve state to be dropped */
 	td->td_sa.code = -1;
 	error = set_mcontext(td, &uc.uc_mcontext);
-	if (error != 0)
+	if (error != 0) {
+		sigexit(td, SIGILL);
 		return (error);
+	}
 
 	/*
 	 * Sync the VFP and SVE registers. To be backwards compatible we
