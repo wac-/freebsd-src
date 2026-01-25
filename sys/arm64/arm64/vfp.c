@@ -83,7 +83,7 @@ _sve_buf_size(u_int sve_len)
 	 */
 	len += sizeof(uint64_t) * 2;
 
-	return (len);
+	return (roundup2(len, 16));
 }
 
 size_t
