@@ -524,8 +524,11 @@ set_mcontext(struct thread *td, mcontext_t *mcp)
 
 	if ((spsr & PSR_M_MASK) != PSR_M_EL0t ||
 	    (spsr & PSR_AARCH32) != 0 ||
-	    (spsr & PSR_DAIF) != (td->td_frame->tf_spsr & PSR_DAIF))
-		return (EINVAL); 
+	    (spsr & PSR_DAIF) != (td->td_frame->tf_spsr & PSR_DAIF)) {
+		uprintf("pid %d (%s): sigreturn spsr = 0x%lx\n",
+		    td->td_proc->p_pid, td->td_name, spsr);
+		return (EINVAL);
+	}
 
 	memcpy(tf->tf_x, mcp->mc_gpregs.gp_x, sizeof(tf->tf_x));
 
@@ -561,8 +564,11 @@ set_mcontext(struct thread *td, mcontext_t *mcp)
 		done = false;
 		do {
 			if (!__is_aligned(addr,
-			    _Alignof(struct arm64_reg_context)))
+			    _Alignof(struct arm64_reg_context))) {
+				uprintf("pid %d (%s): sigreturn unaligned context\n",
+				    td->td_proc->p_pid, td->td_name);
 				return (EINVAL);
+			}
 
 			error = copyin((const void *)addr, &ctx, sizeof(ctx));
 			if (error != 0)
@@ -574,28 +580,41 @@ set_mcontext(struct thread *td, mcontext_t *mcp)
 				struct sve_context sve_ctx;
 				size_t buf_size;
 
-				if ((seen_types & CTX_TYPE_FLAG_SVE) != 0)
+				if ((seen_types & CTX_TYPE_FLAG_SVE) != 0) {
+					uprintf("pid %d (%s): sigreturn duplicate SVE context\n",
+					    td->td_proc->p_pid, td->td_name);
 					return (EINVAL);
+				}
 				seen_types |= CTX_TYPE_FLAG_SVE;
 
-				if (pcb->pcb_svesaved == NULL)
+				if (pcb->pcb_svesaved == NULL) {
+					uprintf("pid %d (%s): sigreturn no SVE state\n",
+					    td->td_proc->p_pid, td->td_name);
 					return (EINVAL);
+				}
 
 				/* XXX: Check pcb_svesaved is valid */
 
 				buf_size = sve_buf_size(td);
 				/* Check the size is valid */
 				if (ctx.ctx_size !=
-				    (sizeof(sve_ctx) + buf_size))
+				    (sizeof(sve_ctx) + buf_size)) {
+					uprintf("pid %d (%s): sigreturn invalid SVE size %d != %zu\n",
+					    td->td_proc->p_pid, td->td_name,
+					    ctx.ctx_size, sizeof(sve_ctx) + buf_size);
 					return (EINVAL);
+				}
 
 				memset(pcb->pcb_svesaved, 0,
 				    sve_max_buf_size());
 
 				/* Copy the SVE registers from userspace */
 				if (copyin((void *)(addr + sizeof(sve_ctx)),
-				    pcb->pcb_svesaved, buf_size) != 0)
+				    pcb->pcb_svesaved, buf_size) != 0) {
+					uprintf("pid %d (%s): sigreturn SVE copyin failed\n",
+					    td->td_proc->p_pid, td->td_name);
 					return (EINVAL);
+				}
 
 				pcb->pcb_fpflags |= PCB_FP_SVEVALID;
 				break;
@@ -605,6 +624,8 @@ set_mcontext(struct thread *td, mcontext_t *mcp)
 				done = true;
 				break;
 			default:
+				uprintf("pid %d (%s): sigreturn invalid context id %x\n",
+				    td->td_proc->p_pid, td->td_name, ctx.ctx_id);
 				return (EINVAL);
 			}
 
